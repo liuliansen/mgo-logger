@@ -1,0 +1,20 @@
+{
+    "name": "liuliansen/mgo-logger",
+    "description": "基于TCP和MongoDB的远程统一日志客户端",
+    "type": "library",
+    "license": "Apache Licene 2.0",
+    "authors": [
+        {
+            "name": "liansen",
+            "email": "liansen@d3zz.com"
+        }
+    ],
+    "minimum-stability": "stable",
+    "require": {},
+    "autoload": {
+        "psr-4": {
+            "mgologer\\": "src/"
+        },
+        "files":["src/functions.php"]
+    }
+}
