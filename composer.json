@@ -2,7 +2,7 @@
     "name": "liuliansen/mgo-logger",
     "description": "基于TCP和MongoDB的远程统一日志客户端",
     "type": "library",
-    "license": "Apache Licene 2.0",
+    "license": "MIT",
     "authors": [
         {
             "name": "liansen",
