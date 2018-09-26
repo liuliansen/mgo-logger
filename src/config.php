@@ -8,7 +8,9 @@ $conf = [
     'db'    => '',
     'user'  => '',
     'password' => '',
-    'time_out' => 1,
+    'connect_sec' => 1,
+    'send_sec' => 3,
+    'recv_sec' => 3,
 ];
 
 return loadLocalConf($conf);

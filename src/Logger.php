@@ -12,14 +12,27 @@ class Logger
 {
     protected static $instance = null;
 
+
+    protected $logPath = '';
+
+    /**
+     * @var \utils\Logger
+     */
+    protected $logger = null;
+
+    protected $fp = null;
+
+    protected $logs = [];
+
     /**
      * 获取日志实例
+     * @param string $logPath
      * @return Logger
      */
-    public static function newInstance()
+    public static function newInstance($logPath = '')
     {
         if(is_null(static::$instance)){
-            static::$instance = new static();
+            static::$instance = new static($logPath);
         }
         return static::$instance;
     }
@@ -39,10 +52,12 @@ class Logger
 
     /**
      * Logger constructor.
+     * @param $logPath
      */
-    public function __construct()
+    public function __construct($logPath)
     {
         $this->conf = include __DIR__. '/config.php';
+        $this->logPath = $logPath;
     }
 
     /**
@@ -53,54 +68,52 @@ class Logger
         if(!empty($this->logs)) {
             $this->flush();
         }
-        socket_write($this->socket, pack("L",-1)); //发送一个特殊的结束标记包
+        $package = pack("L",-1);
+        @fwrite($this->fp, $package,strlen($package)); //发送一个特殊的结束标记包
         $this->closeConnection();
     }
 
-    protected $socket = null;
 
     /**
-     * 抛出错误异常
-     * @throws \Exception
+     * 记录日志
+     * @param $level
+     * @param $log
      */
-    protected function socketException()
+    public function log($level,$log)
     {
-        $errCode = socket_last_error();
-        $errMsg  = socket_strerror($errCode);
-        throw new SocketException("Can not create socket: [{$errCode}] {$errMsg}",$errCode);
+        if(!$this->logPath) return;
+        if(is_null($this->logger)){
+            $this->logger = new \utils\Logger(['path' => $this->logPath]);
+        }
+        call_user_func_array([$this->logger,$level],[$log]);
     }
 
     /**
-     * 创建tcp连接r
+     * 连接服务器
      * @param bool $force
-     * @return resource
+     * @return resource|false
      */
     protected function connect($force = false)
     {
-        if($force || is_null($this->socket)) {
-            $socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
-            if (!$socket) {
-                $this->socketException();
-            }
+        if($force || is_null($this->fp)) {
             $conf = $this->conf;
-            if (!socket_set_option($socket, SOL_SOCKET, SO_SNDTIMEO,
-                ['sec' => ceil($conf['time_out']), 'usec' => $conf['time_out'] * 1000000])) {
-                $this->socketException();
+            $fp = @pfsockopen($conf['host'],$conf['port'],$errno,$errstr,$conf['connect_sec']);
+            if (!$fp) {
+                $this->log('error',"Could not connect to {$conf['host']}:{$conf['port']}.([{$errno}]{$errstr})");
+                return false;
             }
-
-            if (!socket_connect($socket, $conf['host'], $conf['port'])) {
-                $this->socketException();
-            }
-            $this->socket = $socket;
+            $this->fp = $fp;
         }
-        return $this->socket;
+        return $this->fp;
     }
 
     public function closeConnection()
     {
-        @socket_close($this->socket);
-        $this->socket = null;
+        @fclose($this->fp);
+        $this->fp = null;
     }
+
+
 
     /**
      *
@@ -112,6 +125,8 @@ class Logger
      */
     public function write($level,$msg,$callLevel = 0)
     {
+        $fp = $this->connect();
+        if(!$fp) return false;
         $raw = [
             'app'      => $this->conf['db'],
             'level'    => $level,
@@ -141,33 +156,81 @@ class Logger
         }else{
             $raw['log'] = $msg;
         }
-        $sendData = pack("a*", json_encode($raw,JSON_UNESCAPED_UNICODE));
-        $len  = pack('L', strlen($sendData));
-        $package = $len . $sendData;
-        $this->connect();
-        //如果发送报文失败，尝试强制重连一遍
-        if(!socket_write($this->socket, $package,strlen($package))){
-            if($callLevel === 0){
-                $this->connect(true);
-                return $this->write($level,$msg,$callLevel++);
-            }else{
-                return false;
-            }
-        }
-        $h = unpack('Llen',socket_read($this->socket,4));
-        if(!isset($h['len']) || !$h['len']){
-            return false;
-        }
-        $resp = socket_read($this->socket,$h['len']);
+        $log = json_encode($raw,JSON_UNESCAPED_UNICODE);
 
-        $ret  = json_decode($resp,true);
-        if(!$ret ){
+        if(!$this->streamWrite($log) && $callLevel === 0){
+            $callLevel++;
+            $this->connect(true);
+            return $this->streamWrite($raw);
+        }
+        return $this->streamRead($log);
+    }
+
+    /**
+     * 读取结果
+     * @param $log
+     * @return bool
+     */
+    protected function streamRead(&$log)
+    {
+        $null = null;
+        $read = array($this->fp);
+        $readable = @stream_select($read, $null, $null,$this->conf['recv_sec']);
+        if (!$readable) {
+            $this->log('alert',"响应结果读取失败\t{$log}");
             return false;
+        }
+        $head = @fread($this->fp,4);
+        if(!$head){
+            $this->log('alert',"响应结果读取失败\t{$log}");
+            return false;
+        }
+        $head = unpack('Llen',$head);
+        if(!isset($head['len']) || !$head['len']){
+            $this->log('alert',"响应结果头读取失败\t{$log}");
+            return false;
+        }
+        $resp = @fread($this->fp,$head['len']);
+        if(!$resp){
+            $this->log('alert',"响应内容读取失败\t{$log}");
+            return false;
+        }
+        $ret  = json_decode($resp,true);
+        if(!$ret){
+            $this->log('alert',"响应结果解析失败\t{$log}");
+            return false;
+        }
+        if(!$ret['success']){
+            $this->log('error',"{$ret['message']}\t{$log}");
         }
         return $ret['success'];
     }
 
-    protected $logs = [];
+    /**
+     * 写日志
+     * @param $log
+     * @return bool
+     */
+    protected function streamWrite(&$log)
+    {
+        $null = null;
+        $write = array($this->fp);
+        $writable = @stream_select($null, $write, $null,$this->conf['send_sec']);
+        if (!$writable) {
+            $this->log('error','日志写入超时');
+            return false;
+        }
+        $binData = @pack("a*",$log );
+        $len  = @pack('L', strlen($binData));
+        $package = $len . $binData;
+        if(!@fwrite($this->fp,$package,strlen($package))){
+            $this->log('error','日志写入失败');
+            return false;
+        }
+        return true;
+    }
+
+
 
     /**
      * 将消息放入队列，稍后调用 flush方法，一次写入
@@ -195,47 +258,6 @@ class Logger
         }
         $this->logs = [];
     }
-
-
-    /**
-     * <pre>
-     * 载入本地配置(如果配置文件同目录下具有同名的.local.php后缀的本地文件)
-     * e.g.
-     * App/Conf/db.php （公共配置，可以认为是一个模板）
-     *  ~~~~
-     *      $conf = array(
-     *              'DB_TYPE' => 'mysql',
-     *              'DB_HOST' => '112.124.33.139',
-     *              //...
-     *              );
-     *  ~~~~
-     *
-     * APP/Conf/db.local.php （某个环境本地所使用的配置，可能是你的开发环境，也可能是测试环境、生产环境）
-     *  ~~~~
-     *      return array(
-     *              'DB_HOST' => '127.0.0.1',
-     *              );
-     *  ~~~~
-     *
-     * 那么项目运行时 'DB_HOST' 的值 为 db.local.php中的 '127.0.0.1'
-     * @param array $conf
-     * @return array
-     */
-    function loadLocalConf(array &$conf)
-    {
-        if(!function_exists("debug_backtrace")){
-            return $conf;
-        }
-        $trace = @debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 1);
-        if (!$trace || !isset($trace[0]['file'])) return $conf;
-        $localFile = substr($trace[0]['file'], 0, -4) . '.local.php';
-        if (is_file($localFile) && is_readable($localFile)) {
-            $_conf = include $localFile;
-            is_array($_conf) && $conf = array_merge($conf, $_conf);
-        }
-        return $conf;
-    }
-
 
 }
 

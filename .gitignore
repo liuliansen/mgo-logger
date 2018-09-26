@@ -1,2 +1,5 @@
 .idea/
 *.local.php
+composer.lock
+vendor
+*.log

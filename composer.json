@@ -10,11 +10,12 @@
         }
     ],
     "minimum-stability": "stable",
-    "require": {},
+    "require": {
+        "liuliansen/utils": "^1.6"
+    },
     "autoload": {
         "psr-4": {
             "mgologer\\": "src/"
-        },
-        "files":["src/functions.php"]
+        }
     }
 }
