@@ -254,7 +254,9 @@ class Logger
     public function flush()
     {
         foreach ($this->logs as $log){
-            $this->write($log['level'],$log['msg']);
+            if(!$this->write($log['level'],$log['msg']) && is_null($this->fp)){
+                break;
+            }
         }
         $this->logs = [];
     }
