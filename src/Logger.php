@@ -146,15 +146,13 @@ class Logger
         }elseif(is_object($msg) || is_array($msg)){
             $raw['log'] = [];
             foreach ($msg as $k => $v){
-                if(is_array($v) || is_object($v)){
-                    $v = json_encode($v,JSON_UNESCAPED_UNICODE);
-                }else{
+                if(!is_array($v) && !is_object($v)){
                     $v = strval($v);
                 }
                 $raw['log'][$k] = $v;
             }
         }else{
-            $raw['log'] = $msg;
+            $raw['log'] = strval($msg);
         }
         $log = json_encode($raw,JSON_UNESCAPED_UNICODE);
 
