@@ -1,0 +1,7 @@
+{
+	"listen_port" :8707,
+	"mgo_host" :"d3zz.com",
+	"mgo_port" : 27017,
+	"log_type" : 1,
+	"log_dir" : "/var/log"
+}
