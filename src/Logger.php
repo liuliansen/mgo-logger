@@ -68,8 +68,10 @@ class Logger
         if(!empty($this->logs)) {
             $this->flush();
         }
-        $package = pack("L",-1);
-        @fwrite($this->fp, $package,strlen($package)); //发送一个特殊的结束标记包
+        if(!is_null($this->fp)) {
+            $package = pack("L", -1);
+            @fwrite($this->fp, $package, strlen($package)); //发送一个特殊的结束标记包
+        }
         $this->closeConnection();
     }
 
@@ -109,7 +111,9 @@ class Logger
 
     public function closeConnection()
     {
-        @fclose($this->fp);
+        if(!is_null($this->fp)) {
+            @fclose($this->fp);
+        }
         $this->fp = null;
     }
 
