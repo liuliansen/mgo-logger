@@ -163,7 +163,7 @@ class Logger
         if(!$this->streamWrite($log) && $callLevel === 0){
             $callLevel++;
             $this->connect(true);
-            return $this->streamWrite($raw);
+            return $this->streamWrite($log);
         }
         return $this->streamRead($log);
     }
